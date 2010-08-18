@@ -1,14 +1,16 @@
 # Spark
 
-Spark is a command-line tool used to start up node server instances written by [Tj Holowaychuk](http://github.com/visionmedia) and [Tim Caswell](http://github.com/creationix).  It's part of the [Connect](http://github.com/senchalabs/connect) framework, however can be used standalone with _any_ node server.
+Spark is a command-line tool used to manage node server processes written by [Tj Holowaychuk](http://github.com/visionmedia) and [Tim Caswell](http://github.com/creationix).  
+It's part of the [Connect](http://github.com/senchalabs/connect) framework, however can be used standalone with _any_ node server.
 
 ## Features
 
-Spark provides the following options when starting a server.
-
  - Port/Host to listen on
  - SSL hosting with specified key/certificate
- - Automatic child process spawning for multi-process node servers that share a common port.
+ - Automatic child process spawning for multi-process node servers that share a common port
+ - Respawn child processes gracefully on server restart
+ - Graceful or forcible server stop
+ - Automatic server restart when file system changes
  - User/Group to drop to after binding (if run as root)
  - Environment modes (development/testing/production)
  - Modify the node require paths
@@ -46,6 +48,28 @@ And you'll see:
     Spark server(34050) listening on http://*:3000 in development mode
     Spark server(34052) listening on http://*:3000 in development mode
     Spark server(34051) listening on http://*:3000 in development mode
+
+## Commands
+
+Spark supports starting, stopping, restarting, and checking the process status of your app. See
+`spark -h` for more information.
+
+The `spark restart` command is graceful. Configuration will be reloaded (some configuration 
+changes such as host and port require a full stop/start). Each worker will be respawned after 
+currently pending requests have completed. 
+
+The `spark stop` command is also graceful. The server process will wait to shut down until
+all currently pending requests have completed.  To forcibly stop the server without waiting
+for requests to complete, use the `spark interrupt` command.
+
+## Auto-restart on file changes
+
+Spark will restart when the server's source files are changed on the file system. By default, 
+all `.js` files in the current working directory will be watched. 
+
+When running in an  environment other than "development" (i.e. `--env production`), auto-restart 
+is disabled unless you specify the `--watchfile` option. The `--watchfile` option to specifies 
+single file to watch &mdash; just touch the watched file to gracefully restart your app.
 
 ## MIT License
 

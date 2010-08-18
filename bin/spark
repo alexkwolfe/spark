@@ -62,11 +62,11 @@ var usage = ''
     + '[bold]{Usage}: spark [options] [start|stop|restart|interrupt|status]\n'
     + '\n'
     + '[bold]{Commands}:\n'
-    + '  start                Start the HTTP server (default command)\n'
-    + '  stop                 Gracefully stop the HTTP server -- waits for current requests to complete (SIGWINCH)\n'
-    + '  restart              Gracefully restart the HTTP server -- waits for current requests to complete (SIGHUP)\n'
-    + '  interrupt            Stop the HTTP server -- does not wait for current requests to complete (SIGINT)\n'
-    + '  status               Show HTTP server and worker status(es)\n'
+    + '  start                Start the server (default command)\n'
+    + '  stop                 Gracefully stop the server -- waits for current requests to complete (SIGWINCH)\n'
+    + '  restart              Gracefully restart the server -- waits for current requests to complete (SIGHUP)\n'
+    + '  interrupt            Stop the server -- does not wait for current requests to complete (SIGINT)\n'
+    + '  status               Show server and worker status(es)\n'
     + '\n'
     + '[bold]{Options}:\n'
     + '  --comment            Ignored, this is to label the process in htop\n'
@@ -313,11 +313,11 @@ function startWorker() {
 
     stdin.addListener('fd', function(fd){
         var app = requireApp(getAppPath());
-        app.on('close', function() { 
+        app.addListener('close', function() { 
             try { stdin.destroy(); } catch (err) { sys.error("could not destroy worker stream: " + err); }
         });
         ['SIGWINCH', 'SIGHUP'].forEach(function(signal) {
-            process.on(signal, function() {
+            process.addListener(signal, function() {
                 try { app.close(); } catch (err) { sys.error("could not close http server: " + err); }
             });
         });
@@ -406,7 +406,7 @@ function start() {
                 
                 var kills = children.map(function(child, i) {
                     return function(done) {
-                        child.on('exit', function(code, signal) { 
+                        child.addListener('exit', function(code, signal) { 
                             if (restart) children[i] = spawnWorker(fd, i); 
                             done();
                         });
