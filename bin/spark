@@ -715,6 +715,10 @@ function parseArguments(args, cmd) {
             case '--pidfile':
                 env.pidfile = requireArg('--pidfile');
                 break;
+            case '-W':
+            case '--watchfile':
+                env.watchfile = requireArg('--watchfile');
+                break;
             case 'stop':
             case 'start':
             case 'restart':
