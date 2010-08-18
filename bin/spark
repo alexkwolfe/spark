@@ -59,7 +59,7 @@ var env = process.sparkEnv = {
  */
 
 var usage = ''
-    + '[bold]{Usage}: spark [options]\n'
+    + '[bold]{Usage}: spark [options] start|stop|restart|status\n'
     + '\n'
     + '[bold]{Options}:\n'
     + '  --comment            Ignored, this is to label the process in htop\n'
@@ -76,6 +76,7 @@ var usage = ''
     + '  -c, --config PATH    Load configuration module\n'
     + '  -u, --user ID|NAME   Change user with setuid()\n'
     + '  -g, --group ID|NAME  Change group with setgid()\n'
+    + '  -P, --pidfile PATH   PID file, defaults to pids/spark.pid\n'
     + '  -v, --verbose        Enable verbose output\n'
     + '  -V, --version        Output spark version\n'
     + '  -K, --no-color       Suppress colored terminal output\n'
@@ -305,6 +306,33 @@ function startWorker() {
 }
 
 /**
+ * Spawn a worker process
+ */
+function spawnWorker(fd, i) {
+    // Create an unnamed unix socket to pass the fd to the child.
+    var fds = netBinding.socketpair();
+
+    // Spawn the child process
+    var child = child_process.spawn(
+        process.argv[0],
+        [__filename, '--child', (i).toString()],
+        undefined,
+        [fds[1], 1, 2]
+    );
+    log('worker ' + (i + 1) + ' spawned [bold]{' + child.pid + '}');
+
+    // For some reason stdin isn't getting set, patch it externally
+    if (!child.stdin) {
+        child.stdin = new net.Stream(fds[0], 'unix');
+    }
+    
+    child.stdin.write(JSON.stringify(env), 'ascii', fd);
+    fs.writeFileSync(workerPidfile(i), child.pid.toString(), 'ascii');
+
+    return child;
+}
+
+/**
  * Start the process.
  */
 
@@ -333,27 +361,8 @@ function start() {
 
         changeUser();
         var children = [];
-
         for (var i = 0; i < workers; i++) {
-            // Create an unnamed unix socket to pass the fd to the child.
-            var fds = netBinding.socketpair();
-
-            // Spawn the child process
-            var child = children[i] = child_process.spawn(
-                process.argv[0],
-                [__filename, '--child'],
-                undefined,
-                [fds[1], 1, 2]
-            );
-            log('child spawned [bold]{' + child.pid + '}');
-
-            // For some reason stdin isn't getting set, patch it externally
-            if (!child.stdin) {
-                child.stdin = new net.Stream(fds[0], 'unix');
-            }
-
-            child.stdin.write(JSON.stringify(env), 'ascii', fd);
-
+            children[i] = spawnWorker(fd, i);
         }
 
         changeUser();
@@ -361,17 +370,29 @@ function start() {
         // Forward signals to child processes, keeps the zombies at bay.
         ['SIGINT', 'SIGHUP', 'SIGTERM'].forEach(function(signal){
             process.addListener(signal, function(){
-                children.forEach(function(child){
-                    try {
-                        child.kill(signal);
-                    } catch (err) {
-                        // Ignore
+                var kills = children.map(function(child, i) {
+                    return function(done) {
+                        child.on('exit', function(code, signal) {
+                            if (signal === 'SIGHUP') // respawn
+                                children[i] = spawnWorker(fd, i);
+                            done();
+                        });
+                        try { child.kill(signal); } catch (err) { }
                     }
                 });
-                process.exit();
+        
+                // kill children one by one
+                chain(kills, function(err) {
+                    if (err) return sys.error('Error restarting server (' + process.pid + '): ' + err);
+                    // all children have been handled
+                    if (signal != 'SIGHUP') 
+                        process.exit();
+                });             
             });
         });
-
+        
+        // Write out pid
+        fs.writeFileSync(env.pidfile, process.pid.toString(), 'ascii');
         return;
     }
 
@@ -384,7 +405,121 @@ function start() {
     enableSSL(app, env);
     app.listen(env.port, env.host);
 
+    // Write out pid
+    fs.writeFileSync(env.pidfile, process.pid.toString(), 'ascii');
     changeUser();
+}
+
+/**
+ * Chain functions and callback when complete
+ */
+function chain(fxns, callback) {
+    if (fxns.length === 0) return;
+    var pos = 0;
+    var callNext = function() {
+        var done = function(err) {
+            pos++;
+            if (err instanceof Error)
+                return callback(err);
+            if (fxns.length > pos) { 
+                callNext();
+            } else {
+                callback();
+            }
+        };
+        fxns[pos](done);
+    };
+    callNext();
+}
+
+/**
+ * Attempt to stop the given pid.
+ *
+ * @param {Number} pid
+ */
+
+function stopProcess(pid, signal){
+    if (pid) {
+        signal = signal || 'SIGTERM'
+        try {
+            process.kill(pid, signal);
+            if (signal === 'SIGHUP')
+                log('restarted [bold]{' + pid + '}');
+            else
+                log('killed [bold]{' + pid + '}');
+        } catch (err) {
+            if (err.message === 'No such process') {
+                log('process [bold]{' + pid + '} is not running')
+            } else {
+                throw err;
+            }
+        }
+    }
+}
+
+/**
+ * Check status of process(es).
+ */
+
+function status() {
+    checkStatus(getpid(env.pidfile));
+    for (var i = 0; i < workers; ++i) {
+        checkStatus(getpid(workerPidfile(i)), i);
+    }
+}
+
+/**
+ * Check status of the given pid.
+ *
+ * @param {Number} pid
+ */
+
+function checkStatus(pid, worker){
+    if (pid) {
+        try {
+            var pidname = (worker >= 0 ? 'worker ' + (worker + 1) : 'server  ') + ' [bold]{' + pid + '}';
+            verbose = true;
+            process.kill(pid, 0);
+            log(pidname + ' is running');
+            
+        } catch (err) {
+            if (err.message === 'No such process') {
+                log(pidname + ' is not running');
+            } else {
+                throw err;
+            }
+        }
+    }
+}
+
+/**
+ * Return pid from the given path.
+ *
+ * @param {String} path
+ * @return {Number}
+ */
+
+function getpid(path) {
+    try {
+        return parseInt(fs.readFileSync(path), 10);
+    } catch (err) {
+        if (err.errno === process.ENOENT) {
+            log('[bold]{' + err.path + '} does not exist');
+        } else {
+            throw err;
+        }
+    }
+}
+
+/**
+ * Return worker pidfile for the given index.
+ *
+ * @param {Number} i
+ * @return {String}
+ */
+
+function workerPidfile(i){
+    return env.pidfile.replace('.pid', '.' + i + '.pid');    
 }
 
 /**
@@ -410,6 +545,8 @@ function parseArguments(args, cmd) {
         }
     }
 
+    env.pidfile = 'pids/spark.pid';
+
     // Iterate
     while (args.length) {
         switch (arg = args.shift()) {
@@ -418,7 +555,7 @@ function parseArguments(args, cmd) {
               // Ignore it
               break;
             case '--child':
-              cmd = "worker";
+              env.workerNum = parseInt(requireArg('--child'), 10);
               break;
             case '-h':
             case '--help':
@@ -486,6 +623,16 @@ function parseArguments(args, cmd) {
             case '--ssl-crt':
                 env.sslCrt = fs.readFileSync(requireArg('--ssl-crt'), 'ascii');
                 break;
+            case '-P':
+            case '--pidfile':
+                env.pidfile = requireArg('--pidfile');
+                break;
+            case 'stop':
+            case 'start':
+            case 'restart':
+            case 'status':
+                cmd = arg;
+                break;
             default:
                 if (arg[0] === '-') {
                     arg = arg.substr(2);
@@ -496,14 +643,33 @@ function parseArguments(args, cmd) {
         }
     }
 
-    // Run the command
+    // Make pid directory
+    mkdirs(dirname(env.pidfile));
+    
+    // Discover the number of workers
+    if (cmd && cmd != 'start') {
+        var workerPidFiles = fs.readdirSync(dirname(env.pidfile)).map(
+            function(f){ return /\d+.pid$/.test(f); }
+        );
+        workers = workers || Math.max(0, workerPidFiles.length - 1);
+    }
 
+    // Run the command
     switch (cmd) {
-        case 'worker':
-            startWorker();
-            break;
         case 'start':
-            start();
+            if (env.workerNum >= 0) 
+                startWorker();
+            else 
+                start();
+            break;
+        case 'stop':
+            stopProcess(getpid(env.pidfile));
+            break;
+        case 'restart':
+            stopProcess(getpid(env.pidfile), 'SIGHUP');
+            break;
+        case 'status':
+            status();
             break;
     }
 }
