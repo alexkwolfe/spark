@@ -59,7 +59,14 @@ var env = process.sparkEnv = {
  */
 
 var usage = ''
-    + '[bold]{Usage}: spark [options] start|stop|restart|status\n'
+    + '[bold]{Usage}: spark [options] [start|stop|restart|interrupt|status]\n'
+    + '\n'
+    + '[bold]{Commands}:\n'
+    + '  start                Start the HTTP server (default command)\n'
+    + '  stop                 Gracefully stop the HTTP server -- waits for current requests to complete (SIGWINCH)\n'
+    + '  restart              Gracefully restart the HTTP server -- waits for current requests to complete (SIGHUP)\n'
+    + '  interrupt            Stop the HTTP server -- does not wait for current requests to complete (SIGINT)\n'
+    + '  status               Show HTTP server and worker status(es)\n'
     + '\n'
     + '[bold]{Options}:\n'
     + '  --comment            Ignored, this is to label the process in htop\n'
@@ -303,8 +310,17 @@ function startWorker() {
     stdin.addListener('data', function(json){
         process.sparkEnv = env = JSON.parse(json.toString());
     });
+
     stdin.addListener('fd', function(fd){
         var app = requireApp(getAppPath());
+        app.on('close', function() { 
+            try { stdin.destroy(); } catch (err) { sys.error("could not destroy worker stream: " + err); }
+        });
+        ['SIGWINCH', 'SIGHUP'].forEach(function(signal) {
+            process.on(signal, function() {
+                try { app.close(); } catch (err) { sys.error("could not close http server: " + err); }
+            });
+        });
         sys.error('Spark server(' + process.pid + ') listening on '
             + 'http' + (env.sslKey ? 's' : '') + '://'
             + (env.host || '*') + ':' + env.port
@@ -313,7 +329,6 @@ function startWorker() {
         app.listenFD(fd);
     });
     stdin.resume();
-
 }
 
 /**
@@ -384,15 +399,15 @@ function start() {
 
         // Forward signals to child processes, keeps the zombies at bay.
         // Also performs config reload and worker respawing for the SIGHUP signal.
-        ['SIGINT', 'SIGHUP', 'SIGTERM'].forEach(function(signal){
+        ['SIGINT', 'SIGHUP', 'SIGTERM', 'SIGWINCH'].forEach(function(signal){
+            var restart = signal === 'SIGHUP';
             process.addListener(signal, function(){
-                if (signal === 'SIGHUP') loadConfigs();
+                if (restart) loadConfigs();
                 
                 var kills = children.map(function(child, i) {
                     return function(done) {
                         child.on('exit', function(code, signal) { 
-                            if (signal === 'SIGHUP') // respawn
-                                children[i] = spawnWorker(fd, i); 
+                            if (restart) children[i] = spawnWorker(fd, i); 
                             done();
                         });
                         try { child.kill(signal); } catch (err) { done(); }
@@ -402,7 +417,7 @@ function start() {
                 // kill children one by one
                 chain(kills, function() {
                     // all children have been handled
-                    if (signal === 'SIGHUP') {
+                    if (restart) {
                         watcher.reset();
                     } else {
                         watcher.stop();
@@ -465,8 +480,10 @@ function stopProcess(pid, signal){
             process.kill(pid, signal);
             if (signal === 'SIGHUP')
                 log('restarted [bold]{' + pid + '}');
-            else
-                log('killed [bold]{' + pid + '}');
+            else if (signal === 'SIGWINCH')
+                log('stopped [bold]{' + pid + '}');
+            else 
+                log('interrupted [bold]{' + pid + '}');
         } catch (err) {
             if (err.message === 'No such process') {
                 log('process [bold]{' + pid + '} is not running')
@@ -721,6 +738,7 @@ function parseArguments(args, cmd) {
                 break;
             case 'stop':
             case 'start':
+            case 'interrupt':
             case 'restart':
             case 'status':
                 cmd = arg;
@@ -755,6 +773,9 @@ function parseArguments(args, cmd) {
                 start();
             break;
         case 'stop':
+            stopProcess(getpid(env.pidfile), 'SIGWINCH');
+            break;
+        case 'interrupt':
             stopProcess(getpid(env.pidfile));
             break;
         case 'restart':
