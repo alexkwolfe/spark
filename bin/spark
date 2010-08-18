@@ -77,6 +77,7 @@ var usage = ''
     + '  -u, --user ID|NAME   Change user with setuid()\n'
     + '  -g, --group ID|NAME  Change group with setgid()\n'
     + '  -P, --pidfile PATH   PID file, defaults to pids/spark.pid\n'
+    + '  -W, --watchfile PATH Restart when this file is modified; by default all .js files are monitored in development mode\n'
     + '  -v, --verbose        Enable verbose output\n'
     + '  -V, --version        Output spark version\n'
     + '  -K, --no-color       Suppress colored terminal output\n'
@@ -348,6 +349,12 @@ function start() {
     // Application path
     var path = getAppPath();
 
+    var watcher = getFileWatcher();
+    watcher.start(function(file) {
+        log('changed [bold]{' + file + '}');
+        stopProcess(getpid(env.pidfile), 'SIGHUP');
+    });
+
     // Spawn worker processes
     if (workers) {
         if (process.version < '0.1.98' && process.version > "0.1.199") {
@@ -360,6 +367,7 @@ function start() {
         netBinding.listen(fd, 128);
 
         changeUser();
+
         var children = [];
         for (var i = 0; i < workers; i++) {
             children[i] = spawnWorker(fd, i);
@@ -372,21 +380,24 @@ function start() {
             process.addListener(signal, function(){
                 var kills = children.map(function(child, i) {
                     return function(done) {
-                        child.on('exit', function(code, signal) {
+                        child.on('exit', function(code, signal) { 
                             if (signal === 'SIGHUP') // respawn
-                                children[i] = spawnWorker(fd, i);
+                                children[i] = spawnWorker(fd, i); 
                             done();
                         });
-                        try { child.kill(signal); } catch (err) { }
+                        try { child.kill(signal); } catch (err) { done(); }
                     }
                 });
         
                 // kill children one by one
-                chain(kills, function(err) {
-                    if (err) return sys.error('Error restarting server (' + process.pid + '): ' + err);
+                chain(kills, function() {
                     // all children have been handled
-                    if (signal != 'SIGHUP') 
+                    if (signal === 'SIGHUP') {
+                        watcher.reset();
+                    } else {
+                        watcher.stop();
                         process.exit();
+                    }
                 });             
             });
         });
@@ -419,8 +430,7 @@ function chain(fxns, callback) {
     var callNext = function() {
         var done = function(err) {
             pos++;
-            if (err instanceof Error)
-                return callback(err);
+            if (err instanceof Error) sys.error(err);
             if (fxns.length > pos) { 
                 callNext();
             } else {
@@ -521,6 +531,72 @@ function getpid(path) {
 function workerPidfile(i){
     return env.pidfile.replace('.pid', '.' + i + '.pid');    
 }
+
+/**
+ * Build a file system watcher that monitors {env.watchfile} or
+ * the {process.cwd} in development mode.
+ *
+ * @return {Object}
+ */
+function getFileWatcher() {
+    return {
+        watching: false,
+        lastEvent: 0,
+        files: [],
+        callback: null,
+        start: function(cb) {
+            var self = this;
+            if (self.watching) throw new Error("Already watching");
+            self.watching = true;
+            self.callback = cb;
+            self.findFiles(function(files) {
+                self.files = files;
+                log('watching [bold]{' + files.length + ' files}');
+                self.files.forEach(function(file) {
+                    fs.watchFile(file, {interval : 500}, function(curr, prev) {
+                        if (curr.mtime.valueOf() != prev.mtime.valueOf() || curr.ctime.valueOf() != prev.ctime.valueOf()) {
+                            var now = new Date();
+                            if (now - self.lastEvent > 10000) {
+                                self.lastEvent = new Date();
+                                cb(file);
+                            }
+                        }
+                    });
+                });
+            });
+        },
+        stop: function() {
+            log('no longer watching [bold]{' + this.files.length + ' files}');
+            this.files.forEach(function(f) {
+                fs.unwatchFile(f);
+            });
+            this.files = [];
+            this.watching = false;
+        },
+        reset: function() {
+            this.stop();
+            this.start(this.callback);
+        },
+        findFiles: function(cb) {
+            if (env.watchfile) {
+                log('watching [bold]{' + env.watchfile + '}');
+                cb([env.watchfile]);
+            } else if (env.name === 'development'){
+                try {
+                    log('watching [bold]{' + process.cwd() + '}');
+                    child_process.exec('find ' + process.cwd() + ' | grep "\.js$"', function(error, stdout, stderr) {
+                        cb(stdout.trim().split("\n"));
+                    });
+                } catch (e) {
+                    sys.error(e);
+                    cb([]);
+                }
+            }   
+        }
+    }
+}
+
+
 
 /**
  * Parse the arguments.
