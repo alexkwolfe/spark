@@ -169,14 +169,27 @@ function abort(msg, code) {
 }
 
 /**
+ * Load all configuration files
+ */
+function loadConfigs() {
+    env.configFiles.forEach(function(file) {
+        file = process.cwd() + '/' + file;
+        if (exists(file)) {
+            log('loading config [bold]{`' + file + "'}");
+            loadConfig(file);
+        } else {
+            log('config not found [bold]{`' + file + "'}");
+        }
+    });
+}
+
+/**
  * Load the given configuration file.
  *
  * @param  {String} file
  */
 
 function loadConfig(file) {
-    file = process.cwd() + '/' + file;
-    log('loading config [bold]{`' + file + "'}");
     var args = [],
         config = require(file);
     for (var key in config) {
@@ -198,9 +211,6 @@ function loadConfig(file) {
     }
     parseArguments(args);
 }
-
-
-
 
 /**
  * Require application module at the given path,
@@ -340,11 +350,8 @@ function spawnWorker(fd, i) {
 function start() {
     log('starting');
 
-    // Detect config.js
-    if (exists('./config.js')) {
-        log('detected config.js');
-        loadConfig('./config.js');
-    }
+    // Load config files
+    loadConfigs();
 
     // Application path
     var path = getAppPath();
@@ -376,8 +383,11 @@ function start() {
         changeUser();
 
         // Forward signals to child processes, keeps the zombies at bay.
+        // Also performs config reload and worker respawing for the SIGHUP signal.
         ['SIGINT', 'SIGHUP', 'SIGTERM'].forEach(function(signal){
             process.addListener(signal, function(){
+                if (signal === 'SIGHUP') loadConfigs();
+                
                 var kills = children.map(function(child, i) {
                     return function(done) {
                         child.on('exit', function(code, signal) { 
@@ -621,7 +631,8 @@ function parseArguments(args, cmd) {
         }
     }
 
-    env.pidfile = 'pids/spark.pid';
+    env.configFiles = env.configFiles || ['./config.js'];
+    env.pidfile = env.pidFile || 'pids/spark.pid';
 
     // Iterate
     while (args.length) {
@@ -675,7 +686,8 @@ function parseArguments(args, cmd) {
                 break;
             case '-c':
             case '--config':
-                loadConfig(modulePath(requireArg('--config')));
+                var path = requireArg('--config');
+                env.configFiles.push(path);
                 break;
             case '-v':
             case '--verbose':
