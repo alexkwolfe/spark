@@ -179,15 +179,27 @@ function abort(msg, code) {
  * Load all configuration files
  */
 function loadConfigs() {
-    env.configFiles.forEach(function(file) {
-        file = process.cwd() + '/' + file;
-        if (exists(file)) {
-            log('loading config [bold]{`' + file + "'}");
-            loadConfig(file);
-        } else {
-            log('config not found [bold]{`' + file + "'}");
-        }
-    });
+    if (exists(process.cwd() + '/config.js')) {
+        log('using [bold]{single} config mode');
+        env.configFiles.forEach(function(file) {
+            file = process.cwd() + '/' + file;
+            if (exists(file)) {
+                log('loading config [bold]{`' + file + "'}");
+                loadConfig(file);
+            } else {
+                log('config not found [bold]{`' + file + "'}");
+            }
+        });
+    } else {
+        log('using [bold]{environments} config mode');
+        file = process.cwd() + '/config/' + env.name + '.js';
+            if (exists(file)) {
+                log('loading config [bold]{`' + file + "'}");
+                loadConfig(file);
+            } else {
+                log('config not found [bold]{`' + file + "'}");
+            }
+    }
 }
 
 /**
