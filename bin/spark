@@ -598,7 +598,7 @@ function getFileWatcher() {
             } else if (env.name === 'development'){
                 try {
                     log('watching [bold]{' + process.cwd() + '}');
-                    child_process.exec('find ' + process.cwd() + ' | grep "\.js$"', function(error, stdout, stderr) {
+                    child_process.exec('find "' + process.cwd() + '" | grep "\.js$"', function(error, stdout, stderr) {
                         cb(stdout.trim().split("\n"));
                     });
                 } catch (e) {
