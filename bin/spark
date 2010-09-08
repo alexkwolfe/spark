@@ -193,12 +193,12 @@ function loadConfigs() {
     } else {
         log('using [bold]{environments} config mode');
         file = process.cwd() + '/config/' + env.name + '.js';
-            if (exists(file)) {
-                log('loading config [bold]{`' + file + "'}");
-                loadConfig(file);
-            } else {
-                log('config not found [bold]{`' + file + "'}");
-            }
+        if (exists(file)) {
+            log('loading config [bold]{`' + file + "'}");
+            loadConfig(file);
+        } else {
+            log('config not found [bold]{`' + file + "'}");
+        }
     }
 }
 
