@@ -1,10 +1,11 @@
 {
   "name": "spark",
   "description": "Powerful node server starter",
-  "version": "0.0.2",
+  "version": "0.0.2a",
   "contributors": [ 
     { "name": "Tim Caswell", "email": "tim@sencha.com" },
-    { "name": "TJ Holowaychuk", "email": "tj@sencha.com" }
+    { "name": "TJ Holowaychuk", "email": "tj@sencha.com" },
+    { "name": "Alex Wolfe", "email": "alexkwolfe@gmail.com" }
   ],
   "bin": { "spark": "./bin/spark" },
   "engines": { "node": ">= 0.1.100" }
