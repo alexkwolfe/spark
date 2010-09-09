@@ -11,6 +11,7 @@ It's part of the [Connect](http://github.com/senchalabs/connect) framework, howe
  - Respawn child processes gracefully on server restart
  - Graceful or forcible server stop
  - Automatic server restart when file system changes
+ - Server logging to a configurable file
  - User/Group to drop to after binding (if run as root)
  - Environment modes (development/testing/production)
  - Modify the node require paths
@@ -70,6 +71,17 @@ all `.js` files in the current working directory will be watched.
 When running in an  environment other than "development" (i.e. `--env production`), auto-restart 
 is disabled unless you specify the `--watchfile` option. The `--watchfile` option to specifies 
 single file to watch &mdash; just touch the watched file to gracefully restart your app.
+
+## Logging
+
+Spark exposes `process.sparkEnv.log` to each server worker process. This logger writes to the
+file specified in the `--logfile` option, which defaults to `./logs/{env.name}.log`.
+
+You can use the `info`, `debug`, and `error` functions to write to the configured file. 
+All `debug` log statements are ignored unless the `--verbose` option was provided.
+
+The spark process itself uses the standard error output, not the configured log file. So you'll
+need to redirect that output into a file yourself, if you want to see what Spark is up to.
 
 ## MIT License
 
