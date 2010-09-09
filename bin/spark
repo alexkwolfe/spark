@@ -13,6 +13,7 @@
 var child_process = require('child_process'),
     netBinding = process.binding('net'),
     dirname = require('path').dirname,
+    normalizePath = require('path').normalize,
     exists = require('path').existsSync,
     http = require('http'),
     sys = require('sys'),
@@ -36,7 +37,7 @@ var workers;
  * Verbose output.
  */
 
-var verbose;
+var verbose = false;
 
 /**
  * Colored terminal output.
@@ -53,6 +54,7 @@ var env = process.sparkEnv = {
     port: 3000,
     host: null
 };
+
 
 /**
  * Usage documentation.
@@ -84,8 +86,9 @@ var usage = ''
     + '  -u, --user ID|NAME   Change user with setuid()\n'
     + '  -g, --group ID|NAME  Change group with setgid()\n'
     + '  -P, --pidfile PATH   PID file, defaults to pids/spark.pid\n'
+    + '  -L, --logfile PATH   The server\'s log file, defaults to logs/{env}.log\n'
     + '  -W, --watchfile PATH Restart when this file is modified; by default all .js files are monitored in development mode\n'
-    + '  -v, --verbose        Enable verbose output\n'
+    + '  -v, --verbose        Log the server\'s standard error output as \'debug\' statements\n'
     + '  -V, --version        Output spark version\n'
     + '  -K, --no-color       Suppress colored terminal output\n'
     + '  -h, --help           Outputy help information\n'
@@ -99,7 +102,8 @@ var usage = ''
  */
 
 function log(msg) {
-    if (verbose) sys.error('... ' + colorize(msg));
+    if (verbose) 
+        sys.error('... ' + colorize(msg));
 }
 
 /**
@@ -312,6 +316,46 @@ function changeUser() {
   }
 }
 
+/**
+ * Each worker processes gets a logger.
+ */
+function getLogger(cfg) {
+    return {
+        verbose: cfg.verbose,
+        logfile: cfg.file,
+        info: function(msg) {
+            this._log('[Info] ' + msg);
+        },
+        debug: function(msg) {
+            if (this.verbose)
+                this._log('[Debug] ' + msg);
+        },
+        error: function(err) {
+            if (err instanceof Error) {
+                this._log('[Error] ' + err.stack);
+            } else {
+                this._log('[Error] ' + err);
+            }
+        },
+        logstream: function() {
+            if (!this.stream || !this.stream.writeable) {
+                this.stream = fs.createWriteStream(this.logfile, { 'flags': 'a+',  'encoding': 'utf8' });
+            }
+            return this.stream;
+        },
+        _log: function info(msg) {
+            this._write(msg + '\n');
+        },
+        _write: function write(msg) {
+            if ('none' === this.logfile) {
+                return sys.print(msg + '\n');
+            } else {
+                this.logstream().write(msg.trim() + '\n');
+            }
+        }
+    } 
+}
+
 
 /**
  * Start child worker process.
@@ -321,6 +365,7 @@ function startWorker() {
     var stdin = new net.Stream(0, 'unix');
     stdin.addListener('data', function(json){
         process.sparkEnv = env = JSON.parse(json.toString());
+        env.log = getLogger(env.log);
     });
 
     stdin.addListener('fd', function(fd){
@@ -333,7 +378,7 @@ function startWorker() {
                 try { app.close(); } catch (err) { sys.error("could not close http server: " + err); }
             });
         });
-        sys.error('Spark server(' + process.pid + ') listening on '
+        sys.puts('Spark server (' + process.pid + ') listening on '
             + 'http' + (env.sslKey ? 's' : '') + '://'
             + (env.host || '*') + ':' + env.port
             + ' in ' + env.name + ' mode');
@@ -358,7 +403,7 @@ function spawnWorker(fd, i) {
         [fds[1], 1, 2]
     );
     log('worker ' + (i + 1) + ' spawned [bold]{' + child.pid + '}');
-
+   
     // For some reason stdin isn't getting set, patch it externally
     if (!child.stdin) {
         child.stdin = new net.Stream(fds[0], 'unix');
@@ -420,7 +465,8 @@ function start() {
             var kills = children.map(function(child, i) {
                 return function(done) {
                     child.addListener('exit', function(code, signal) { 
-                        if (restart) children[i] = spawnWorker(fd, i); 
+                        if (restart) 
+                            children[i] = spawnWorker(fd, i); 
                         done();
                     });
                     try { child.kill(signal); } catch (err) { done(); }
@@ -649,6 +695,10 @@ function parseArguments(args, cmd) {
 
     env.configFiles = env.configFiles || ['./config.js'];
     env.pidfile = env.pidFile || 'pids/spark.pid';
+    
+    // used to initialize a logger for each worker
+    env.log = {}
+    env.log.verbose = false;
 
     // Iterate
     while (args.length) {
@@ -708,6 +758,7 @@ function parseArguments(args, cmd) {
             case '-v':
             case '--verbose':
                 verbose = true;
+                env.log.verbose = true;
                 break;
             case '-V':
             case '--version':
@@ -730,6 +781,10 @@ function parseArguments(args, cmd) {
             case '-P':
             case '--pidfile':
                 env.pidfile = requireArg('--pidfile');
+                break;
+            case '-L':
+            case '--logfile':
+                env.log.file = requireArg('--logfile');
                 break;
             case '-W':
             case '--watchfile':
@@ -754,6 +809,19 @@ function parseArguments(args, cmd) {
 
     // Make pid directory
     mkdirs(dirname(env.pidfile));
+    
+    // Default log file
+    if (!env.log.file)
+        env.log.file = './logs/' + env.name + '.log';
+      
+    // Normalize log file path    
+    if (env.log.file[0] !== '/')  // relative path
+        env.log.file = normalizePath(dirname(getAppPath()) + '/' + env.log.file);
+        
+    log('logging to [bold]{' + env.log.file + '}');
+    
+    // Make log directory
+    mkdirs(dirname(env.log.file));
     
     // Discover the number of workers
     if (cmd && cmd != 'start') {
