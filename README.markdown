@@ -72,6 +72,10 @@ When running in an  environment other than "development" (i.e. `--env production
 is disabled unless you specify the `--watchfile` option. The `--watchfile` option to specifies 
 single file to watch &mdash; just touch the watched file to gracefully restart your app.
 
+Auto-restart signals `HUP` in all environments except `development`, which always signals `INT`
+on file system changes. That means that in development, any pending requests will be forcibly
+terminated on file system changes.
+
 ## Logging
 
 Spark exposes `process.sparkEnv.log` to each server worker process. This logger writes to the

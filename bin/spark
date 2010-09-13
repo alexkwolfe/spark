@@ -458,7 +458,7 @@ function start() {
                             if (restarted(lastSignal)) children[i] = spawnWorker(fd, i); 
                             done();
                         });
-                        try { child.kill(lastSignal); } catch (err) { done(); }
+                        try { child.kill(childKillSignal(lastSignal)); } catch (err) { done(); }
                     } else {
                         // the child has already exited, respawn if necessary
                         if (restarted(lastSignal)) children[i] = spawnWorker(fd, i); 
@@ -497,6 +497,12 @@ function start() {
     
     // Write out pid
     fs.writeFileSync(env.pidfile, process.pid.toString(), 'ascii');
+}
+
+function childKillSignal(sig) {
+    if (sig === 'SIGHUP' && env.name === 'development')
+        return 'SIGINT';
+    return sig;
 }
 
 function interrupted(sig) {
