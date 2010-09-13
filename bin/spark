@@ -455,13 +455,16 @@ function start() {
 
     changeUser();
 
+    
     // Forward signals to child processes, keeps the zombies at bay.
     // Also performs config reload and worker respawing for the SIGHUP signal.
+    var lastSignal = null;
     ['SIGINT', 'SIGHUP', 'SIGTERM', 'SIGWINCH'].forEach(function(signal){
-        var restart = signal === 'SIGHUP';
         process.addListener(signal, function(){
+            lastSignal = signal;
+            var restart = lastSignal === 'SIGHUP';
             if (restart) loadConfigs();
-            
+
             var kills = children.map(function(child, i) {
                 return function(done) {
                     child.addListener('exit', function(code, signal) { 
@@ -469,12 +472,13 @@ function start() {
                             children[i] = spawnWorker(fd, i); 
                         done();
                     });
-                    try { child.kill(signal); } catch (err) { done(); }
+                    try { child.kill(lastSignal); } catch (err) { done(); }
                 }
             });
-    
+
             // kill children one by one
             chain(kills, function() {
+                kills.length = 0;
                 // all children have been handled
                 if (restart) {
                     watcher.reset();
@@ -488,7 +492,6 @@ function start() {
     
     // Write out pid
     fs.writeFileSync(env.pidfile, process.pid.toString(), 'ascii');
-
 }
 
 /**
