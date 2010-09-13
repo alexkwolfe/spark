@@ -444,24 +444,24 @@ function start() {
     var lastSignal = null;
     ['SIGINT', 'SIGHUP', 'SIGTERM', 'SIGWINCH'].forEach(function(signal){
         process.addListener(signal, function() {
+            watcher.stop();
             lastSignal = signal;
-            var restart = restarted(lastSignal);
             
             // reload the app configuration
-            if (restart) loadConfigs();
+            if (restarted(lastSignal)) loadConfigs();
 
             var kills = children.map(function(child, i) {
                 return function(done) {
                     if (isRunning(child.pid)) {
                         // the child has not yet exited, so exit and respawn if necessary
                         child.addListener('exit', function(code, signal) { 
-                            if (restart) children[i] = spawnWorker(fd, i); 
+                            if (restarted(lastSignal)) children[i] = spawnWorker(fd, i); 
                             done();
                         });
                         try { child.kill(lastSignal); } catch (err) { done(); }
                     } else {
                         // the child has already exited, respawn if necessary
-                        if (restart) children[i] = spawnWorker(fd, i); 
+                        if (restarted(lastSignal)) children[i] = spawnWorker(fd, i); 
                         done();
                     }
                 }
@@ -470,10 +470,9 @@ function start() {
             // kill children one by one
             chain(kills, function() {
                 // all children have been handled
-                if (restart) {
-                    watcher.reset();
+                if (restarted(lastSignal)) {
+                    watcher.restart();
                 } else {
-                    watcher.stop();
                     process.exit();
                 }
             });             
@@ -649,7 +648,7 @@ function getFileWatcher() {
                     fs.watchFile(file, {interval : 500}, function(curr, prev) {
                         if (curr.mtime.valueOf() != prev.mtime.valueOf() || curr.ctime.valueOf() != prev.ctime.valueOf()) {
                             var now = new Date();
-                            if (now - self.lastEvent > 10000) {
+                            if (now - self.lastEvent > 1000) {
                                 self.lastEvent = new Date();
                                 cb(file);
                             }
@@ -658,6 +657,9 @@ function getFileWatcher() {
                 });
             });
         },
+        restart: function() {
+           this.start(this.callback); 
+        },
         stop: function() {
             log('no longer watching [bold]{' + this.files.length + ' files}');
             this.files.forEach(function(f) {
@@ -665,10 +667,6 @@ function getFileWatcher() {
             });
             this.files = [];
             this.watching = false;
-        },
-        reset: function() {
-            this.stop();
-            this.start(this.callback);
         },
         findFiles: function(cb) {
             if (env.watchfile) {
