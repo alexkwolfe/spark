@@ -449,12 +449,6 @@ function start() {
     changeUser();
 
     var children = [];
-    for (var i = 0; i < workers; i++) {
-        children[i] = spawnWorker(fd, i);
-    }
-
-    changeUser();
-
     
     // Forward signals to child processes, keeps the zombies at bay.
     // Also performs config reload and worker respawing for the SIGHUP signal.
@@ -489,6 +483,13 @@ function start() {
             });             
         });
     });
+    
+    for (var i = 0; i < workers; i++) {
+        children[i] = spawnWorker(fd, i);
+    }
+
+    changeUser();
+
     
     // Write out pid
     fs.writeFileSync(env.pidfile, process.pid.toString(), 'ascii');
