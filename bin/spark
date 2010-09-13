@@ -438,18 +438,6 @@ function start() {
         stopProcess(getpid(env.pidfile), 'SIGHUP');
     });
 
-    // Spawn worker processes
-	if (!workers) workers = 1; 
-
-    var afNum = (netBinding.isIP(env.host) == 6) ? 6 : 4;
-    var fd = netBinding.socket('tcp' + afNum);
-    netBinding.bind(fd, env.port, env.host);
-    netBinding.listen(fd, 128);
-
-    changeUser();
-
-    
-    
     // Forward signals to child processes, keeps the zombies at bay.
     // Also performs config reload and worker respawing for the SIGHUP signal.
     var children = [];
@@ -458,22 +446,29 @@ function start() {
         process.addListener(signal, function() {
             lastSignal = signal;
             var restart = restarted(lastSignal);
+            
+            // reload the app configuration
             if (restart) loadConfigs();
 
             var kills = children.map(function(child, i) {
                 return function(done) {
-                    child.addListener('exit', function(code, signal) { 
-                        if (restart) 
-                            children[i] = spawnWorker(fd, i); 
+                    if (isRunning(child.pid)) {
+                        // the child has not yet exited, so exit and respawn if necessary
+                        child.addListener('exit', function(code, signal) { 
+                            if (restart) children[i] = spawnWorker(fd, i); 
+                            done();
+                        });
+                        try { child.kill(lastSignal); } catch (err) { done(); }
+                    } else {
+                        // the child has already exited, respawn if necessary
+                        if (restart) children[i] = spawnWorker(fd, i); 
                         done();
-                    });
-                    try { child.kill(lastSignal); } catch (err) { done(); }
+                    }
                 }
             });
 
             // kill children one by one
             chain(kills, function() {
-                kills.length = 0;
                 // all children have been handled
                 if (restart) {
                     watcher.reset();
@@ -485,13 +480,21 @@ function start() {
         });
     });
     
-    // Spawn workers, unless process was interrupted
+    // Spawn workers unless process was interrupted
+	if (!workers) workers = 1; 
+
+    var afNum = (netBinding.isIP(env.host) == 6) ? 6 : 4;
+    var fd = netBinding.socket('tcp' + afNum);
+    netBinding.bind(fd, env.port, env.host);
+    netBinding.listen(fd, 128);
+
+    changeUser();
+    
     for (var i = 0; i < workers && !interrupted(lastSignal); i++) {
         children[i] = spawnWorker(fd, i);
     }
-
+    
     changeUser();
-
     
     // Write out pid
     fs.writeFileSync(env.pidfile, process.pid.toString(), 'ascii');
@@ -572,18 +575,22 @@ function status() {
 
 function checkStatus(pid, worker){
     if (pid) {
-        try {
-            var pidname = (worker >= 0 ? 'worker ' + (worker + 1) : 'server  ') + ' [bold]{' + pid + '}';
-            verbose = true;
-            process.kill(pid, 0);
-            log(pidname + ' is running');
-            
-        } catch (err) {
-            if (err.message === 'No such process') {
-                log(pidname + ' is not running');
-            } else {
-                throw err;
-            }
+        var pidname = (worker >= 0 ? 'worker ' + (worker + 1) : 'server  ') + ' [bold]{' + pid + '}';
+        log(pidname + (isRunning(pid) ? ' is ' : ' is not ') + 'running');
+    }
+}
+
+function isRunning(pid) {
+    if (!pid)
+        return false;
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (err) {
+        if (err.message === 'No such process') {
+            return false;
+        } else {
+            throw err;
         }
     }
 }
