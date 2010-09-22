@@ -524,6 +524,14 @@ function start() {
     var lastSignal = null;
     ['SIGINT', 'SIGHUP', 'SIGTERM', 'SIGWINCH'].forEach(function(signal){
         process.addListener(signal, function() {
+            var action;
+            switch(signal) {
+                case 'SIGHUP': action = 'restarting'; break;
+                case 'SIGWINCH': action = 'stopping'; break;
+                default: action = 'interrupting';
+            }
+            log(action + ' due to [bold]{' + signal + '}');
+                
             watcher.stop();
             lastSignal = signal;
             
@@ -551,8 +559,10 @@ function start() {
             chain(kills, function() {
                 // all children have been handled
                 if (restarted(lastSignal)) {
+                    log('restarted');
                     watcher.restart();
                 } else {
+                    log('exited');
                     process.exit();
                 }
             });             
@@ -743,7 +753,7 @@ function getFileWatcher() {
                 });
             });
         },
-        restart: function() {
+        restart: function(cb) {
            this.start(this.callback); 
         },
         stop: function() {
@@ -927,7 +937,7 @@ function parseArguments(args, cmd) {
       
     // Normalize log file path    
     if (env.log.file[0] !== '/')  // relative path
-        env.log.file = normalizePath(dirname(getAppPath()) + '/' + env.log.file);
+        env.log.file = normalizePath(dirname(getAppPath()) + '/' + env.log.file);  
         
     // Pass verbose config to logger
     env.log.verbose = verbose;
