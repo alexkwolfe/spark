@@ -34,6 +34,11 @@ var version = '0.2.3';
 var workers;
 
 /**
+ * Process comment
+ */
+var comment; 
+
+/**
  * Verbose output.
  */
 
@@ -465,11 +470,15 @@ function startWorker() {
 function spawnWorker(fd, i) {
     // Create an unnamed unix socket to pass the fd to the child.
     var fds = netBinding.socketpair();
+    
+    var args = [__filename, '--child', (i).toString()];
+    if (comment)
+        args.push('--comment', comment);
 
     // Spawn the child process
     var child = child_process.spawn(
         process.argv[0],
-        [__filename, '--child', (i).toString()],
+        args,
         undefined,
         [fds[1], 1, 2]
     );
@@ -802,8 +811,7 @@ function parseArguments(args, cmd) {
     while (args.length) {
         switch (arg = args.shift()) {
             case '--comment':
-              requireArg('--comment');
-              // Ignore it
+              comment = requireArg('--comment');
               break;
             case '--child':
               env.workerNum = parseInt(requireArg('--child'), 10);
