@@ -3,19 +3,35 @@
 Spark is a command-line tool used to manage node server processes written by [Tj Holowaychuk](http://github.com/visionmedia) and [Tim Caswell](http://github.com/creationix).  
 It's part of the [Connect](http://github.com/senchalabs/connect) framework, however can be used standalone with _any_ node server.
 
+This is a highly modified fork of the [original Spark](http://github.com/senchalabs/spark) library which adds a number of process management
+and logging features &mdash; see the feature list below. This README documents the extra functionality that has been
+added to this fork.  
+
+Please report problems with any of the fork-specific features to [Alex Wolfe](http://github.com/alexkwolfe), 
+rather than the Tj or Tim.  Fixes to the forked repository will be merged.
+
+## Installation
+
+Using the standard `npm` installation for Spark will get you the original library. This version is not hosted in the NPM package repository.
+You must clone and install it locally:
+
+    git clone git@github.com:alexkwolfe/spark.git
+    cd spark
+    npm install .
+
 ## Features
 
  - Port/Host to listen on
  - SSL hosting with specified key/certificate
- - Automatic child process spawning for multi-process node servers that share a common port
- - Respawn child processes gracefully on server restart
- - Graceful or forcible server stop
- - Automatic server restart when file system changes
- - Server logging to a configurable file
+ - Spawns a configurable number of worker processes
+ - Environment modes (development/test/production)
+ - **[this fork]** Server restart on file system changes
+ - **[this fork]** Respawn worker processes gracefully on server restart
+ - **[this fork]** Graceful or forcible server stop
+ - **[this fork]** Server logging to ./logs/{environment mode}.js (configurable)
+ - **[this fork]** Automatically loads configuration from ./config/{environment mode}.js (configurable)
  - User/Group to drop to after binding (if run as root)
- - Environment modes (development/testing/production)
  - Modify the node require paths
- - Can load any of these configs from from a file (optionally grouped by env)
  - Can change the working directory before running the app
  - `--comment` option to label processes in system tools like `ps` or `htop`
  - Pass arbitrary code or environment variables to the app
