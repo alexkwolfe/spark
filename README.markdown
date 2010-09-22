@@ -78,14 +78,32 @@ terminated on file system changes.
 
 ## Logging
 
-Spark exposes `process.sparkEnv.log` to each server worker process. This logger writes to the
-file specified in the `--logfile` option, which defaults to `./logs/{env.name}.log`.
+Spark exposes 'process.sparkEnv.log' to each server worker process. This logger writes to the
+file specified in the `--logfile` option, which defaults to `./logs/{env.name}.log`. Log file rotation
+is up to you.
 
-You can use the `info`, `debug`, and `error` functions to write to the configured file. 
-All `debug` log statements are ignored unless the `--verbose` option was provided.
+### Log levels
+You can use the `log.debug`, `log.info`, and `log.error` functions to write to the configured file. Use the
+`--loglevel` option to control the verbosity of your application's log output. For example, setting 
+`--loglevel info` will log 'info', and 'error' log messages, but not 'debug' messages. The log level
+uses sensible defaults based on `--env`.
 
-The spark process itself uses the standard error output, not the configured log file. So you'll
-need to redirect that output into a file yourself, if you want to see what Spark is up to.
+### Sending an Error to the logger
+
+Logging an `Error` object will automatically log it as an 'error' and will include the stack trace.
+
+### Writing to output
+
+When you use the `--verbose` option, the Spark process itself will write to STDERR, and will also
+direct your apps log statements to STDOUT (while adhering to the configured log level).
+
+### Customizing log statement format
+
+To customize the date format that the logger uses, replace the `log.formatDate(date)` function. It
+takes a single `Date` parameter and returns a `String`.
+
+To customize the format of the log statement, replace the `log.format(date, level, msg)` function with
+your own function that returns a `String`.
 
 ## MIT License
 

@@ -48,12 +48,16 @@ var useColors = true;
 /**
  * Environment defaults.
  */
-
 var env = process.sparkEnv = {
     name: process.env.SPARK_ENV || 'development',
     port: 3000,
     host: null
 };
+
+/**
+ * Available logging levels.
+ */
+var logLevels = ['error', 'info', 'debug'];
 
 
 /**
@@ -87,8 +91,9 @@ var usage = ''
     + '  -g, --group ID|NAME  Change group with setgid()\n'
     + '  -P, --pidfile PATH   PID file, defaults to pids/spark.pid\n'
     + '  -L, --logfile PATH   The server\'s log file, defaults to logs/{env}.log\n'
+    + '      --loglevel LEVEL The log level to use: ' + logLevels.join(', ') + '\n'
     + '  -W, --watchfile PATH Restart when this file is modified; by default all .js files are monitored in development mode\n'
-    + '  -v, --verbose        Log the server\'s standard error output as \'debug\' statements\n'
+    + '  -v, --verbose        Send spark output, and log statements to stdout\n'
     + '  -V, --version        Output spark version\n'
     + '  -K, --no-color       Suppress colored terminal output\n'
     + '  -h, --help           Outputy help information\n'
@@ -186,7 +191,7 @@ function loadConfigs() {
     if (exists(process.cwd() + '/config.js')) {
         log('using [bold]{single} config mode');
         env.configFiles.forEach(function(file) {
-            file = process.cwd() + '/' + file;
+            file = normalizePath(process.cwd() + '/' + file);
             if (exists(file)) {
                 log('loading config [bold]{`' + file + "'}");
                 loadConfig(file);
@@ -225,7 +230,6 @@ function loadConfig(file) {
 
         // Apply flags
         val.forEach(function(val){
-            log('  ' + key + ' ' + (val === true ? '' : sys.inspect(val)));
             args.push(key);
             if (typeof val !== 'boolean') {
                 args.push(val);
@@ -233,6 +237,35 @@ function loadConfig(file) {
         });
     }
     parseArguments(args);
+    if (verbose) {
+        var c = JSON.parse(JSON.stringify(env)); // ugly deep clone
+        delete c.configFiles;
+        delete c.appPath;
+        log('using host [bold]{' + c.host + ':' + c.port + '} in [bold]{' + c.name + '}'); delete c.host; delete c.port; delete c.name; 
+        log('using pid dir [bold]{' + normalizePath(process.cwd() + '/' + dirname(c.pidfile)) + '}'); delete c.pidfile
+        log('using log file [bold]{' + c.log.file + '} at [bold]{' + c.log.level + '} level'); delete c.log;
+        log('other config: ');
+        Object.keys(c).forEach(function(key) {
+            printPair(key, c[key], 1);
+        })
+    }
+}
+
+function printPair(key, val, level) {
+    var msg = '';
+    for(var i = 0; i < level; i++) { msg += '  '; }
+    msg += '[bold]{' + key + '}: ';
+    if (Array.isArray(val)) {
+        msg += JSON.stringify(val);
+    } else if (typeof val === 'object') {
+        log(msg);
+        Object.keys(val).forEach(function(k) {
+            printPair(k, val[k], level + 1);
+        });
+    } else {
+        msg += val;
+        log(msg);
+    }
 }
 
 /**
@@ -285,7 +318,7 @@ function getAppPath() {
         } else {
             abort('app not found, pass a module path, or create {app,server}.js');
         }
-    }
+    } 
 
     return path;
 }
@@ -320,40 +353,78 @@ function changeUser() {
  * Each worker processes gets a logger.
  */
 function getLogger(cfg) {
-    return {
+    var levels = cfg.levels || logLevels;
+    
+    var logger = {
         verbose: cfg.verbose,
-        logfile: cfg.file,
-        info: function(msg) {
-            this._log('[Info] ' + msg);
-        },
-        debug: function(msg) {
-            if (this.verbose)
-                this._log('[Debug] ' + msg);
-        },
-        error: function(err) {
-            if (err instanceof Error) {
-                this._log('[Error] ' + err.stack);
-            } else {
-                this._log('[Error] ' + err);
-            }
-        },
+        logfile: cfg.file, 
+        level: cfg.level,
         logstream: function() {
             if (!this.stream || !this.stream.writeable) {
                 this.stream = fs.createWriteStream(this.logfile, { 'flags': 'a+',  'encoding': 'utf8' });
             }
             return this.stream;
         },
-        _log: function info(msg) {
-            this._write(msg + '\n');
+        format: function(date, level, msg) {
+            return this.formatDate(date) + ' [' + level.toUpperCase() + '] ' + msg;
         },
-        _write: function write(msg) {
-            if ('none' === this.logfile) {
-                return sys.print(msg + '\n');
-            } else {
-                this.logstream().write(msg.trim() + '\n');
-            }
+        write: function write(msg, level) {
+            if (!msg) return;
+            
+            // log as info if no level is specified
+            level = level || ((msg instanceof Error) ? 'error' : 'info');
+            if (logLevels.indexOf(level) == -1)
+                level = 'info';
+
+            // include error stack
+            if (msg instanceof Error) 
+                msg = msg.message + (msg.stack ? '\n' + msg.stack : '');
+            
+            // if the configured logging level isn't the same or higher
+            // than the message being logged, then bail
+            if (!(levels.indexOf(this.level) >= levels.indexOf(level)))
+                return;
+            
+            // trim and append newline if necessary
+            msg = msg.toString().trim();
+            if (!/\n$/.test(msg)) msg += '\n';
+
+            // format the log message
+            msg = this.format(this.formatDate(new Date()), level, msg);
+            
+            var logToFile = 'none' !== this.logfile;            
+            
+            // output to stdout if no file or if verbose
+            if (!logToFile || this.verbose) sys.print(msg);
+            
+            // output to log file
+            if (logToFile) this.logstream().write(msg);
+        },
+        formatDate: function(date) {
+            if (typeof date == 'string') return date;
+            var zone = ((date.getTimezoneOffset() / 60) * 100);
+            zone = (zone > 0 ? '+' : '-') + zone;
+            return date.getFullYear() + '-' +
+                    this._zero(date.getMonth()) + '-' +
+                    this._zero(date.getDate()) + ' ' + 
+                    this._zero(date.getHours()) + ':' + 
+                    this._zero(date.getMinutes()) + ':' + 
+                    this._zero(date.getSeconds()) + ':' + 
+                    date.getMilliseconds() + ' ' +
+                    zone;
+        },
+        _zero: function(i) {
+            if (i < 10)
+                return '0' + i;
+            return i;
         }
-    } 
+    };
+    levels.forEach(function(name) {
+        logger[name] = function(msg) {
+            this.write(msg, name);  
+        };
+    });
+    return logger;
 }
 
 
@@ -378,7 +449,7 @@ function startWorker() {
                 try { app.close(); } catch (err) { sys.error("could not close http server: " + err); }
             });
         });
-        sys.puts('Spark server (' + process.pid + ') listening on '
+        env.log.info('Spark server (' + process.pid + ') listening on '
             + 'http' + (env.sslKey ? 's' : '') + '://'
             + (env.host || '*') + ':' + env.port
             + ' in ' + env.name + ' mode');
@@ -722,8 +793,10 @@ function parseArguments(args, cmd) {
     env.pidfile = env.pidFile || 'pids/spark.pid';
     
     // used to initialize a logger for each worker
-    env.log = {}
-    env.log.verbose = false;
+    if (!env.log) {
+        env.log = {}
+        env.log.verbose = false;
+    }
 
     // Iterate
     while (args.length) {
@@ -811,6 +884,11 @@ function parseArguments(args, cmd) {
             case '--logfile':
                 env.log.file = requireArg('--logfile');
                 break;
+            case '--loglevel':
+                env.log.level = requireArg('--loglevel').toLowerCase();
+                if (logLevels.indexOf(env.log.level) == -1)
+                    abort('--loglevel must be: ' + logLevels.join(', '));
+                break;
             case '-W':
             case '--watchfile':
                 env.watchfile = requireArg('--watchfile');
@@ -843,8 +921,21 @@ function parseArguments(args, cmd) {
     if (env.log.file[0] !== '/')  // relative path
         env.log.file = normalizePath(dirname(getAppPath()) + '/' + env.log.file);
         
-    log('logging to [bold]{' + env.log.file + '}');
+    // Pass verbose config to logger
+    env.log.verbose = verbose;
     
+    // Different default logging levels for each environment
+    if (!env.log.level) {
+        var defaultLevel;
+        switch (env.name) {
+            case 'production': defaultLevel = 'error'; break;
+            case 'development': defaultLevel = 'debug'; break;
+            case 'test': defaultLevel = 'debug'; break;
+            default: defaultLevel = 'info';
+        }
+        env.log.level = defaultLevel;
+    }
+        
     // Make log directory
     mkdirs(dirname(env.log.file));
     
