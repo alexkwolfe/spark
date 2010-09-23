@@ -810,7 +810,6 @@ function parseArguments(args, cmd) {
     }
 
     env.configFiles = env.configFiles || ['./config.js'];
-    env.pidfile = env.pidFile || 'pids/spark.pid';
     
     // used to initialize a logger for each worker
     if (!env.log) {
@@ -929,16 +928,18 @@ function parseArguments(args, cmd) {
         }
     }
     
+    // Default pid file
+    env.pidfile = env.pidfile || './pids/spark.pid';
+    
     // Normalize pid file path
     if (env.pidfile[0] !== '/')  // relative path
        env.pidfile = normalizePath(dirname(getAppPath()) + '/' + env.pidfile);  
-
+       
     // Make pid directory
     mkdirs(dirname(env.pidfile));
     
     // Default log file
-    if (!env.log.file)
-        env.log.file = './logs/' + env.name + '.log';
+    env.log.file = env.log.file || './logs/' + env.name + '.log';
       
     // Normalize log file path    
     if (env.log.file[0] !== '/')  // relative path
