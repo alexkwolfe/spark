@@ -15,7 +15,7 @@ rather than the Tj or Tim.  Fixes to the forked repository will be merged.
 Using the standard `npm` installation for Spark will get you the original library. This version is not hosted in the NPM package repository.
 You must clone and install it locally:
 
-    git clone git@github.com:alexkwolfe/spark.git
+    git clone git://github.com/alexkwolfe/spark.git
     cd spark
     npm install .
 
