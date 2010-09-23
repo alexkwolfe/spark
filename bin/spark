@@ -928,12 +928,14 @@ function parseArguments(args, cmd) {
         }
     }
     
+     var appPath = getAppPath();
+    
     // Default pid file
     env.pidfile = env.pidfile || './pids/spark.pid';
     
     // Normalize pid file path
     if (env.pidfile[0] !== '/')  // relative path
-       env.pidfile = normalizePath(dirname(getAppPath()) + '/' + env.pidfile);  
+       env.pidfile = normalizePath(dirname(appPath) + '/' + env.pidfile);  
        
     // Make pid directory
     mkdirs(dirname(env.pidfile));
@@ -943,7 +945,7 @@ function parseArguments(args, cmd) {
       
     // Normalize log file path    
     if (env.log.file[0] !== '/')  // relative path
-        env.log.file = normalizePath(dirname(getAppPath()) + '/' + env.log.file);  
+        env.log.file = normalizePath(dirname(appPath) + '/' + env.log.file);  
         
     // Pass verbose config to logger
     env.log.verbose = verbose;
