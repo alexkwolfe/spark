@@ -248,7 +248,7 @@ function loadConfig(file) {
         delete c.appPath;
         delete c.watchfile;
         log('using host [bold]{' + c.host + ':' + c.port + '} in [bold]{' + c.name + '}'); delete c.host; delete c.port; delete c.name; 
-        log('using pid dir [bold]{' + normalizePath(process.cwd() + '/' + dirname(c.pidfile)) + '}'); delete c.pidfile
+        log('using pid dir [bold]{' + dirname(c.pidfile) + '}'); delete c.pidfile
         log('using log file [bold]{' + c.log.file + '} at [bold]{' + c.log.level + '} level'); delete c.log;
         log('other config: ');
         Object.keys(c).forEach(function(key) {
@@ -928,6 +928,10 @@ function parseArguments(args, cmd) {
                 }
         }
     }
+    
+    // Normalize pid file path
+    if (env.pidfile[0] !== '/')  // relative path
+       env.pidfile = normalizePath(dirname(getAppPath()) + '/' + env.pidfile);  
 
     // Make pid directory
     mkdirs(dirname(env.pidfile));
