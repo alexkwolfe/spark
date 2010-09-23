@@ -571,7 +571,7 @@ function start() {
     });
     
     // Spawn workers unless process was interrupted
-	if (!workers) workers = 1; 
+    if (!workers) workers = 1; 
 
     var afNum = (netBinding.isIP(env.host) == 6) ? 6 : 4;
     var fd = netBinding.socket('tcp' + afNum);
