@@ -246,6 +246,7 @@ function loadConfig(file) {
         var c = JSON.parse(JSON.stringify(env)); // ugly deep clone
         delete c.configFiles;
         delete c.appPath;
+        delete c.watchfile;
         log('using host [bold]{' + c.host + ':' + c.port + '} in [bold]{' + c.name + '}'); delete c.host; delete c.port; delete c.name; 
         log('using pid dir [bold]{' + normalizePath(process.cwd() + '/' + dirname(c.pidfile)) + '}'); delete c.pidfile
         log('using log file [bold]{' + c.log.file + '} at [bold]{' + c.log.level + '} level'); delete c.log;
