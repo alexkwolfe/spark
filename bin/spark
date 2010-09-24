@@ -355,6 +355,25 @@ function changeUser() {
   }
 }
 
+function formatDate(date) {
+    if (typeof date == 'string') return date;
+    var zone = ((date.getTimezoneOffset() / 60) * 100);
+    zone = (zone > 0 ? '+' : '-') + zone;
+    return date.getFullYear() + '-' +
+            zero(date.getMonth()) + '-' +
+            zero(date.getDate()) + ' ' + 
+            zero(date.getHours()) + ':' + 
+            zero(date.getMinutes()) + ':' + 
+            zero(date.getSeconds()) + ':' + 
+            date.getMilliseconds() + ' ' +
+            zone;
+}
+
+function zero(i) {
+    if (i < 10) return '0' + i;
+    return i;
+}
+
 /**
  * Each worker processes gets a logger.
  */
@@ -406,24 +425,7 @@ function getLogger(cfg) {
             // output to log file
             if (logToFile) this.logstream().write(msg);
         },
-        formatDate: function(date) {
-            if (typeof date == 'string') return date;
-            var zone = ((date.getTimezoneOffset() / 60) * 100);
-            zone = (zone > 0 ? '+' : '-') + zone;
-            return date.getFullYear() + '-' +
-                    this._zero(date.getMonth()) + '-' +
-                    this._zero(date.getDate()) + ' ' + 
-                    this._zero(date.getHours()) + ':' + 
-                    this._zero(date.getMinutes()) + ':' + 
-                    this._zero(date.getSeconds()) + ':' + 
-                    date.getMilliseconds() + ' ' +
-                    zone;
-        },
-        _zero: function(i) {
-            if (i < 10)
-                return '0' + i;
-            return i;
-        }
+        formatDate: formatDate
     };
     levels.forEach(function(name) {
         logger[name] = function(msg) {
@@ -501,7 +503,7 @@ function spawnWorker(fd, i) {
  */
 
 function start() {
-    log('starting');
+    log('starting at [bold]{' + formatDate(new Date()) + '}');
 
     if (process.version < '0.1.98' && process.version > "0.1.199") {
         abort('Cannot use spark with a version older than v0.1.98');
@@ -531,7 +533,7 @@ function start() {
                 case 'SIGWINCH': action = 'stopping'; break;
                 default: action = 'interrupting';
             }
-            log(action + ' due to [bold]{' + signal + '}');
+            log(action + ' due to [bold]{' + signal + '} at [bold]{' + formatDate(new Date()) + '}');
                 
             watcher.stop();
             lastSignal = signal;
@@ -560,10 +562,10 @@ function start() {
             chain(kills, function() {
                 // all children have been handled
                 if (restarted(lastSignal)) {
-                    log('restarted');
+                    log('restarted at [bold]{' + formatDate(new Date()) + '}');
                     watcher.restart();
                 } else {
-                    log('exited');
+                    log('exited at [bold]{' + formatDate(new Date()) + '}');
                     process.exit();
                 }
             });             
