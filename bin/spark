@@ -62,7 +62,7 @@ var env = process.sparkEnv = {
 /**
  * Available logging levels.
  */
-var logLevels = ['error', 'info', 'debug'];
+var logLevels = ['error', 'warn', 'info', 'debug'];
 
 
 /**
@@ -956,7 +956,7 @@ function parseArguments(args, cmd) {
     if (!env.log.level) {
         var defaultLevel;
         switch (env.name) {
-            case 'production': defaultLevel = 'error'; break;
+            case 'production': defaultLevel = 'warn'; break;
             case 'development': defaultLevel = 'debug'; break;
             case 'test': defaultLevel = 'debug'; break;
             default: defaultLevel = 'info';
