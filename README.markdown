@@ -121,6 +121,19 @@ takes a single `Date` parameter and returns a `String`.
 To customize the format of the log statement, replace the `log.format(date, level, msg)` function with
 your own function that returns a `String`.
 
+### Logging options in the configuration file
+
+All logging configuration goes under the `log` key in your config file:
+
+    {
+	   host: 'localhost',
+	   port: 80,
+	   log : { 
+		 level : 'warn', 
+		 file  : './logs/applog.log'
+	   }
+    }
+
 ## MIT License
 
 Copyright (c) 2010 Sencha Inc.
