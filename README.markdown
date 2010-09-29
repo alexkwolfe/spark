@@ -95,8 +95,7 @@ terminated on file system changes.
 ## Logging
 
 Spark exposes 'process.sparkEnv.log' to each server worker process. This logger writes to the
-file specified in the `--logfile` option, which defaults to `./logs/{env.name}.log`. Log file rotation
-is up to you.
+file specified in the `--logfile` option, which defaults to `./logs/{env.name}.log`. 
 
 ### Log levels
 You can use the `log.debug`, `log.info`, and `log.error` functions to write to the configured file. Use the
@@ -133,6 +132,19 @@ All logging configuration goes under the `log` key in your config file:
 		 file  : './logs/applog.log'
 	   }
     }
+
+### Log rotation
+
+Spark does not automatically rotate your log files &mdash; logrotate is recommended. Make sure to use 
+the `copytruncate` option, so that your app can continue writing to the same log file:
+
+	/var/www/vhosts/your_project/logs/*log {
+	   daily
+	   rotate 7
+	   missingok
+	   copytruncate
+	}
+
 
 ## MIT License
 
