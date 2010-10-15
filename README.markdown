@@ -124,7 +124,7 @@ your own function that returns a `String`.
 
 All logging configuration goes under the `log` key in your config file:
 
-    {
+	modules.export = {
 	   host: 'localhost',
 	   port: 80,
 	   log : { 
