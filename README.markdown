@@ -1,3 +1,5 @@
+*THIS BRANCH IS DEPRECATED*
+
 # Spark
 
 Spark is a command-line tool used to manage node server processes written by [Tj Holowaychuk](http://github.com/visionmedia) and [Tim Caswell](http://github.com/creationix).  
